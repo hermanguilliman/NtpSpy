@@ -1,0 +1,8 @@
+services:
+  app:
+    build: .
+    ports:
+      - "123:123/udp"  # Порт для приложения (например, NTP_PORT=123)
+    environment:
+      env_file: ".env"
+    restart: unless-stopped
