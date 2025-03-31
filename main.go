@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -15,10 +16,19 @@ import (
 	"go.uber.org/zap"
 )
 
+// Config - структура для конфигурации программы
 type Config struct {
 	NTPPort        string
 	TelegramToken  string
 	TelegramChatID string
+}
+
+// GeoIP - структура для хранения геолокационных данных
+type GeoIP struct {
+	Country string `json:"country"`
+	City    string `json:"city"`
+	ASN     string `json:"as"`
+	ISP     string `json:"isp"`
 }
 
 var logger *zap.Logger
@@ -66,6 +76,29 @@ func main() {
 	logger.Info("Программа завершена")
 }
 
+// getGeoIP - функция для получения геолокационных данных по IP-адресу
+func getGeoIP(ip string) (GeoIP, error) {
+	var geo GeoIP
+	url := fmt.Sprintf("http://ip-api.com/json/%s?fields=country,city,as,isp", ip)
+	resp, err := http.Get(url)
+	if err != nil {
+		return geo, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return geo, fmt.Errorf("API вернул ошибку: %s", resp.Status)
+	}
+
+	err = json.NewDecoder(resp.Body).Decode(&geo)
+	if err != nil {
+		return geo, err
+	}
+
+	return geo, nil
+}
+
+// startNTPServer - запуск NTP-сервера с обработкой запросов и геолокацией
 func startNTPServer(ctx context.Context, port string, msgChan chan<- string) {
 	addr, err := net.ResolveUDPAddr("udp", ":"+port)
 	if err != nil {
@@ -107,7 +140,21 @@ func startNTPServer(ctx context.Context, port string, msgChan chan<- string) {
 						logger.Warn("Ошибка отправки ответа клиенту", zap.Error(err))
 					}
 
-					msg := fmt.Sprintf("Синхронизация NTP с клиентом: %s", clientAddr.String())
+					// Извлекаем IP-адрес клиента
+					ip := clientAddr.IP.String()
+
+					// Получаем геолокационные данные
+					geo, err := getGeoIP(ip)
+					var msg string
+					if err != nil {
+						logger.Warn("Ошибка получения геолокационных данных", zap.Error(err))
+						msg = fmt.Sprintf("Синхронизация NTP с клиентом: %s (геолокация не определена)", ip)
+					} else {
+						msg = fmt.Sprintf("Синхронизация NTP с клиентом: %s\nСтрана: %s\nГород: %s\nASN: %s\nПровайдер: %s",
+							ip, geo.Country, geo.City, geo.ASN, geo.ISP)
+					}
+
+					// Отправляем сообщение в канал
 					select {
 					case msgChan <- msg:
 					default:
@@ -129,6 +176,7 @@ func startNTPServer(ctx context.Context, port string, msgChan chan<- string) {
 	}
 }
 
+// makeNTPResponse - создание NTP-ответа
 func makeNTPResponse() []byte {
 	response := make([]byte, 48)
 	response[0] = 0x1c
@@ -149,6 +197,7 @@ func makeNTPResponse() []byte {
 	return response
 }
 
+// processTelegramMessages - отправка сообщений в Telegram
 func processTelegramMessages(ctx context.Context, token, chatID string, msgChan <-chan string) {
 	for {
 		select {
