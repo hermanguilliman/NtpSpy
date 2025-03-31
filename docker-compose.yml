@@ -2,7 +2,8 @@ services:
   app:
     build: .
     ports:
-      - "123:123/udp"  # Порт для приложения (например, NTP_PORT=123)
+      - "123:123/udp"
     environment:
       env_file: ".env"
     restart: unless-stopped
+    container_name: "ntp_spy"

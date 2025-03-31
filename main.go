@@ -15,18 +15,15 @@ import (
 	"go.uber.org/zap"
 )
 
-// Конфигурация приложения
 type Config struct {
 	NTPPort        string
 	TelegramToken  string
 	TelegramChatID string
 }
 
-// Логгер
 var logger *zap.Logger
 
 func init() {
-	// Инициализация логгера
 	var err error
 	logger, err = zap.NewProduction()
 	if err != nil {
@@ -36,49 +33,39 @@ func init() {
 }
 
 func main() {
-	// Загружаем .env файл (для разработки)
 	_ = godotenv.Load()
 
-	// Получаем конфигурацию
 	config := Config{
 		NTPPort:        os.Getenv("NTP_PORT"),
 		TelegramToken:  os.Getenv("TELEGRAM_TOKEN"),
 		TelegramChatID: os.Getenv("TELEGRAM_CHAT_ID"),
 	}
 
-	// Проверяем обязательные параметры
 	if config.NTPPort == "" || config.TelegramToken == "" || config.TelegramChatID == "" {
 		logger.Fatal("Отсутствуют обязательные переменные окружения: NTP_PORT, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID")
 	}
 
-	// Создаем контекст для graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Канал для сигналов
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Очередь для отправки сообщений в Telegram
 	msgChan := make(chan string, 100)
 	go processTelegramMessages(ctx, config.TelegramToken, config.TelegramChatID, msgChan)
 
-	// Запускаем NTP сервер
 	go startNTPServer(ctx, config.NTPPort, msgChan)
 
 	logger.Info("Программа запущена")
 
-	// Ожидаем сигнал завершения
 	<-sigChan
 	logger.Info("Получен сигнал завершения, выполняем graceful shutdown")
 	cancel()
 
-	// Даем время на завершение операций
 	time.Sleep(2 * time.Second)
 	logger.Info("Программа завершена")
 }
 
-// Запуск NTP сервера
 func startNTPServer(ctx context.Context, port string, msgChan chan<- string) {
 	addr, err := net.ResolveUDPAddr("udp", ":"+port)
 	if err != nil {
@@ -111,19 +98,15 @@ func startNTPServer(ctx context.Context, port string, msgChan chan<- string) {
 				continue
 			}
 
-			// Проверка размера пакета (должен быть 48 байт)
 			if n == 48 {
-				// Извлекаем режим из первого байта (последние 3 бита)
 				mode := buf[0] & 0x07
 				if mode == 3 {
-					// Легитимный запрос на синхронизацию времени
 					response := makeNTPResponse()
 					_, err = conn.WriteToUDP(response, clientAddr)
 					if err != nil {
 						logger.Warn("Ошибка отправки ответа клиенту", zap.Error(err))
 					}
 
-					// Отправляем сообщение в Telegram только для mode 3
 					msg := fmt.Sprintf("Синхронизация NTP с клиентом: %s", clientAddr.String())
 					select {
 					case msgChan <- msg:
@@ -131,13 +114,11 @@ func startNTPServer(ctx context.Context, port string, msgChan chan<- string) {
 						logger.Warn("Очередь сообщений переполнена, сообщение отброшено")
 					}
 				} else {
-					// Некорректный режим — возможно, сканирование
 					logger.Info("Получен некорректный NTP-запрос",
 						zap.String("client", clientAddr.String()),
 						zap.Uint8("mode", mode))
 				}
 			} else {
-				// Некорректный размер пакета — возможно, сканирование
 				logger.Info("Получен пакет с некорректным размером",
 					zap.String("client", clientAddr.String()),
 					zap.Int("size", n))
@@ -148,10 +129,9 @@ func startNTPServer(ctx context.Context, port string, msgChan chan<- string) {
 	}
 }
 
-// Формирование NTP ответа
 func makeNTPResponse() []byte {
 	response := make([]byte, 48)
-	response[0] = 0x1c // LeapIndicator: 0, Version: 3, Mode: 4 (server)
+	response[0] = 0x1c
 
 	now := time.Now().UTC()
 	seconds := uint32(now.Unix() + 2208988800)
@@ -169,7 +149,6 @@ func makeNTPResponse() []byte {
 	return response
 }
 
-// Обработка сообщений в Telegram
 func processTelegramMessages(ctx context.Context, token, chatID string, msgChan <-chan string) {
 	for {
 		select {
