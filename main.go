@@ -143,7 +143,7 @@ func startNTPServer(ctx context.Context, port string, msgChan chan<- string) {
 					zap.Int("size", n))
 			}
 
-			bufPool.Put(buf)
+			bufPool.Put(&buf)
 		}
 	}
 }
