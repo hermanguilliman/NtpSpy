@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"sync"
@@ -197,7 +198,6 @@ func makeNTPResponse() []byte {
 	return response
 }
 
-// processTelegramMessages - отправка сообщений в Telegram
 func processTelegramMessages(ctx context.Context, token, chatID string, msgChan <-chan string) {
 	for {
 		select {
@@ -205,16 +205,30 @@ func processTelegramMessages(ctx context.Context, token, chatID string, msgChan 
 			logger.Info("Остановка обработки сообщений Telegram")
 			return
 		case msg := <-msgChan:
-			url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s", token, chatID, msg)
-			resp, err := http.Get(url)
+			// Кодируем текст сообщения для URL
+			text := url.QueryEscape(msg)
+			urlStr := fmt.Sprintf(
+				"https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s",
+				token,
+				chatID,
+				text,
+			)
+
+			resp, err := http.Get(urlStr)
 			if err != nil {
-				logger.Warn("Ошибка отправки сообщения в Telegram", zap.Error(err))
+				logger.Warn("Ошибка отправки сообщения в Telegram",
+					zap.Error(err),
+					zap.String("url", urlStr),
+				)
 				continue
 			}
 			defer resp.Body.Close()
 
 			if resp.StatusCode != http.StatusOK {
-				logger.Warn("Telegram API вернул ошибку", zap.String("status", resp.Status))
+				logger.Warn("Telegram API вернул ошибку",
+					zap.String("status", resp.Status),
+					zap.String("url", urlStr),
+				)
 			}
 		}
 	}
