@@ -93,9 +93,8 @@ func startNTPServer(ctx context.Context, port string, msgChan chan<- string) {
 
 	logger.Info("NTP сервер запущен", zap.String("port", port))
 
-	// Буфер для повторного использования
 	bufPool := sync.Pool{
-		New: func() interface{} { return make([]byte, 48) },
+		New: func() interface{} { b := make([]byte, 48); return &b },
 	}
 
 	for {
@@ -104,28 +103,44 @@ func startNTPServer(ctx context.Context, port string, msgChan chan<- string) {
 			logger.Info("Остановка NTP сервера")
 			return
 		default:
-			buf := bufPool.Get().([]byte)
+			buf := *(bufPool.Get().(*[]byte))
 			n, clientAddr, err := conn.ReadFromUDP(buf)
 			if err != nil {
 				logger.Warn("Ошибка чтения UDP", zap.Error(err))
-				bufPool.Put(buf)
+				bufPool.Put(&buf)
 				continue
 			}
 
-			response := makeNTPResponse()
-			if n > 0 {
-				_, err = conn.WriteToUDP(response, clientAddr)
-				if err != nil {
-					logger.Warn("Ошибка отправки ответа клиенту", zap.Error(err))
-				}
-			}
+			// Проверка размера пакета (должен быть 48 байт)
+			if n == 48 {
+				// Извлекаем режим из первого байта (последние 3 бита)
+				mode := buf[0] & 0x07
+				if mode == 3 {
+					// Легитимный запрос на синхронизацию времени
+					response := makeNTPResponse()
+					_, err = conn.WriteToUDP(response, clientAddr)
+					if err != nil {
+						logger.Warn("Ошибка отправки ответа клиенту", zap.Error(err))
+					}
 
-			// Отправляем сообщение в очередь
-			msg := fmt.Sprintf("Синхронизация NTP с клиентом: %s", clientAddr.String())
-			select {
-			case msgChan <- msg:
-			default:
-				logger.Warn("Очередь сообщений переполнена, сообщение отброшено")
+					// Отправляем сообщение в Telegram только для mode 3
+					msg := fmt.Sprintf("Синхронизация NTP с клиентом: %s", clientAddr.String())
+					select {
+					case msgChan <- msg:
+					default:
+						logger.Warn("Очередь сообщений переполнена, сообщение отброшено")
+					}
+				} else {
+					// Некорректный режим — возможно, сканирование
+					logger.Info("Получен некорректный NTP-запрос",
+						zap.String("client", clientAddr.String()),
+						zap.Uint8("mode", mode))
+				}
+			} else {
+				// Некорректный размер пакета — возможно, сканирование
+				logger.Info("Получен пакет с некорректным размером",
+					zap.String("client", clientAddr.String()),
+					zap.Int("size", n))
 			}
 
 			bufPool.Put(buf)
