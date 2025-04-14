@@ -17,14 +17,14 @@ import (
 	"go.uber.org/zap"
 )
 
-// Config - структура для конфигурации программы
+// Структура для конфигурации программы
 type Config struct {
-	NTPPort        string
-	TelegramToken  string
-	TelegramChatID string
+	NTPPort          string
+	TelegramBotToken string
+	TelegramAdminID  string
 }
 
-// GeoIP - структура для хранения геолокационных данных
+// Структура для хранения геолокационных данных
 type GeoIP struct {
 	Country string `json:"country"`
 	City    string `json:"city"`
@@ -47,12 +47,12 @@ func main() {
 	_ = godotenv.Load()
 
 	config := Config{
-		NTPPort:        os.Getenv("NTP_PORT"),
-		TelegramToken:  os.Getenv("TELEGRAM_TOKEN"),
-		TelegramChatID: os.Getenv("TELEGRAM_CHAT_ID"),
+		NTPPort:          os.Getenv("NTP_PORT"),
+		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
+		TelegramAdminID:  os.Getenv("TELEGRAM_ADMIN_ID"),
 	}
 
-	if config.NTPPort == "" || config.TelegramToken == "" || config.TelegramChatID == "" {
+	if config.NTPPort == "" || config.TelegramBotToken == "" || config.TelegramAdminID == "" {
 		logger.Fatal("Отсутствуют обязательные переменные окружения: NTP_PORT, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID")
 	}
 
@@ -63,7 +63,7 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	msgChan := make(chan string, 100)
-	go processTelegramMessages(ctx, config.TelegramToken, config.TelegramChatID, msgChan)
+	go processTelegramMessages(ctx, config.TelegramBotToken, config.TelegramAdminID, msgChan)
 
 	go startNTPServer(ctx, config.NTPPort, msgChan)
 
@@ -77,7 +77,7 @@ func main() {
 	logger.Info("Программа завершена")
 }
 
-// getGeoIP - функция для получения геолокационных данных по IP-адресу
+// Функция для получения геолокационных данных по IP-адресу
 func getGeoIP(ip string) (GeoIP, error) {
 	var geo GeoIP
 	url := fmt.Sprintf("http://ip-api.com/json/%s?fields=country,city,as,isp", ip)
@@ -99,7 +99,7 @@ func getGeoIP(ip string) (GeoIP, error) {
 	return geo, nil
 }
 
-// startNTPServer - запуск NTP-сервера с обработкой запросов и геолокацией
+// Запуск NTP-сервера с обработкой запросов и геолокацией
 func startNTPServer(ctx context.Context, port string, msgChan chan<- string) {
 	addr, err := net.ResolveUDPAddr("udp", ":"+port)
 	if err != nil {
@@ -177,7 +177,7 @@ func startNTPServer(ctx context.Context, port string, msgChan chan<- string) {
 	}
 }
 
-// makeNTPResponse - создание NTP-ответа
+// Создание NTP-ответа
 func makeNTPResponse() []byte {
 	response := make([]byte, 48)
 	response[0] = 0x1c
