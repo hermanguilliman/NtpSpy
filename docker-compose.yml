@@ -6,4 +6,4 @@ services:
     environment:
       env_file: ".env"
     restart: unless-stopped
-    container_name: "ntp_spy"
+    container_name: "NtpSpy"
